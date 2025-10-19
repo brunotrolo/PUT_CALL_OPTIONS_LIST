@@ -2,12 +2,17 @@ import os
 import pandas as pd
 import streamlit as st
 from datetime import date
-from dateutil import parser
 
 from oplab_client import OpLabClient
 
 st.set_page_config(page_title="Opções B3 • OpLab", layout="wide")
 st.sidebar.title("Configurações")
+
+def safe_sort(df, by, ascending=True):
+    by_existing = [c for c in (by if isinstance(by, (list, tuple)) else [by]) if c in df.columns]
+    if by_existing:
+        return df.sort_values(by_existing, ascending=ascending)
+    return df
 
 # Validação de token
 token_ok = "OPLAB_ACCESS_TOKEN" in st.secrets or os.getenv("OPLAB_ACCESS_TOKEN") is not None
@@ -36,7 +41,6 @@ def load_universe(max_pages=5, per=200):
         rows.extend(data)
         if len(data) < per:
             break
-    import pandas as pd
     df = pd.DataFrame(rows)
     if not df.empty and "has_options" in df.columns:
         df = df[df["has_options"] == True]
@@ -56,9 +60,8 @@ with col3:
 df_filtered = df_universe.copy()
 if "financial_volume" in df_filtered.columns and min_fin_vol > 0:
     df_filtered = df_filtered[df_filtered["financial_volume"].fillna(0) >= min_fin_vol]
-if query:
-    if "symbol" in df_filtered.columns:
-        df_filtered = df_filtered[df_filtered["symbol"].str.contains(query, case=False, na=False)]
+if query and "symbol" in df_filtered.columns:
+    df_filtered = df_filtered[df_filtered["symbol"].str.contains(query, case=False, na=False)]
 
 st.subheader("Subjacentes (amostragem)")
 st.dataframe(df_filtered.head(show_rows), use_container_width=True)
@@ -85,7 +88,6 @@ if query:
         with st.spinner("Carregando cadeia..."):
             chain = client.list_options(query) or []
 
-        import pandas as pd
         df_chain = pd.DataFrame(chain)
         if df_chain.empty:
             st.info("Sem dados de opções para este subjacente.")
@@ -135,7 +137,7 @@ if query:
                 df_chain = df_chain[df_chain["iv"].fillna(0) >= min_iv / 100.0]
 
             cols = [c for c in ["op_symbol","tipo","serie","venc","ddm","strike","ultimo","bid","ask","iv","poe","delta","theta","vega","rho","vol","vol_fin"] if c in df_chain.columns]
-            st.dataframe(df_chain[cols].sort_values(["venc","tipo","strike"]).reset_index(drop=True), use_container_width=True)
+            st.dataframe(safe_sort(df_chain[cols], ["venc","tipo","strike"]).reset_index(drop=True), use_container_width=True)
 
         st.markdown("---")
 
@@ -143,7 +145,6 @@ if query:
         st.subheader("🔍 Scanner — Covered Calls")
         with st.spinner("Buscando oportunidades..."):
             covered = client.covered_calls(query) or []
-        import pandas as pd
         df_cc = pd.DataFrame(covered)
         if df_cc.empty:
             st.info("Sem resultados para covered calls.")
@@ -174,7 +175,7 @@ if query:
                 df_cc["retorno_pot_%"] = df_cc["premio_%"] + df_cc["upside_%"].clip(lower=0)
 
             show_cols = [c for c in ["op_symbol","venc","ddm","strike","spot","bid","ask","premio_%","upside_%","retorno_pot_%","iv","poe","delta","theta","vega"] if c in df_cc.columns]
-            st.dataframe(df_cc[show_cols].sort_values(["retorno_pot_%","premio_%"], ascending=[False,False]).reset_index(drop=True), use_container_width=True)
+            st.dataframe(safe_sort(df_cc[show_cols], ["retorno_pot_%","premio_%"]).reset_index(drop=True), use_container_width=True)
 
         st.markdown("---")
 
